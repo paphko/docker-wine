@@ -2,9 +2,6 @@ ARG BASE_IMAGE="ubuntu"
 ARG TAG="latest"
 FROM ${BASE_IMAGE}:${TAG}
 
-# removing 64-bit wine files saves ~600MB in image size
-ARG DEL_64BIT=false
-
 # Install prerequisites
 RUN apt-get update \
     && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
@@ -24,15 +21,22 @@ RUN apt-get update \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# Install wine
+# Install wine (optionally removing 64-bit wine files saves ~600MB in image size)
 ARG WINE_BRANCH="stable"
+ARG DEL_64BIT=false
 RUN wget -nv -O- https://dl.winehq.org/wine-builds/winehq.key | APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1 apt-key add - \
     && echo "deb https://dl.winehq.org/wine-builds/ubuntu/ $(grep VERSION_CODENAME= /etc/os-release | cut -d= -f2) main" >> /etc/apt/sources.list \
     && dpkg --add-architecture i386 \
     && apt-get update \
     && DEBIAN_FRONTEND="noninteractive" apt-get install -y --install-recommends winehq-${WINE_BRANCH} \
     && rm -rf /var/lib/apt/lists/* \
-	&& if [ "$DEL_64BIT" = "true" ]; then echo "Removing 64bit wine files files..." && rm -rf /opt/wine-stable/lib64; fi
+    && if [ "$DEL_64BIT" = "true" ]; then echo "Removing 64bit wine files files..." && rm -rf /opt/wine-stable/lib64; fi
+
+# Install winetricks (optionally)
+ARG WINETRICKS=true
+RUN if [ "$WINETRICKS" = "true" ]; then \
+    wget -nv -O /usr/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
+    && chmod +x /usr/bin/winetricks; fi
 
 # Download mono installer (skip gecko!)
 COPY download_gecko_and_mono.sh /root/download_gecko_and_mono.sh
