@@ -1,6 +1,9 @@
-ARG BASE_IMAGE="scottyhardy/docker-remote-desktop"
+ARG BASE_IMAGE="ubuntu"
 ARG TAG="latest"
 FROM ${BASE_IMAGE}:${TAG}
+
+# removing 64-bit wine files saves ~600MB in image size
+ARG DEL_64BIT=false
 
 # Install prerequisites
 RUN apt-get update \
@@ -13,16 +16,12 @@ RUN apt-get update \
         gosu \
         gpg-agent \
         locales \
-        p7zip \
-        pulseaudio \
-        pulseaudio-utils \
         sudo \
         tzdata \
         unzip \
         wget \
         winbind \
         xvfb \
-        zenity \
     && rm -rf /var/lib/apt/lists/*
 
 # Install wine
@@ -32,13 +31,10 @@ RUN wget -nv -O- https://dl.winehq.org/wine-builds/winehq.key | APT_KEY_DONT_WAR
     && dpkg --add-architecture i386 \
     && apt-get update \
     && DEBIAN_FRONTEND="noninteractive" apt-get install -y --install-recommends winehq-${WINE_BRANCH} \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+	&& if [ "$DEL_64BIT" = "true" ]; then echo "Removing 64bit wine files files..." && rm -rf /opt/wine-stable/lib64; fi
 
-# Install winetricks
-RUN wget -nv -O /usr/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
-    && chmod +x /usr/bin/winetricks
-
-# Download gecko and mono installers
+# Download mono installer (skip gecko!)
 COPY download_gecko_and_mono.sh /root/download_gecko_and_mono.sh
 RUN chmod +x /root/download_gecko_and_mono.sh \
     && /root/download_gecko_and_mono.sh "$(wine --version | sed -E 's/^wine-//')"
@@ -47,6 +43,5 @@ RUN chmod +x /root/download_gecko_and_mono.sh \
 RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8
 
-COPY pulse-client.conf /root/pulse/client.conf
 COPY entrypoint.sh /usr/bin/entrypoint
 ENTRYPOINT ["/usr/bin/entrypoint"]

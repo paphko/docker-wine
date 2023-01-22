@@ -26,7 +26,8 @@ if [ -z "${WINE_VER}" ]; then
     exit 1
 fi
 
-for APP in "gecko" "mono"; do
+#for APP in "gecko" "mono"; do
+for APP in "mono"; do
 
     # Get the app version required from wine source code
     APP_VER=$(get_app_ver "${APP}")

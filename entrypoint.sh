@@ -16,16 +16,14 @@ USER_GID=${USER_GID:-"${USER_UID}"}
 USER_HOME=${USER_HOME:-/home/"${USER_NAME}"}
 USER_PASSWD=${USER_PASSWD:-"$(openssl passwd -1 -salt "$(openssl rand -base64 6)" "${USER_NAME}")"}
 USER_SUDO=${USER_SUDO:-yes}
-RDP_SERVER=${RDP_SERVER:-no}
 RUN_AS_ROOT=${RUN_AS_ROOT:-no}
 FORCED_OWNERSHIP=${FORCED_OWNERSHIP:-no}
 TZ=${TZ:-UTC}
 USE_XVFB=${USE_XVFB:-no}
-DUMMY_PULSEAUDIO=${DUMMY_PULSEAUDIO:-no}
 
 # Catch attempts to set user as root
 if [ "${USER_NAME}" = 'root' ] || [ "${USER_UID}" -eq 0 ] || [ "${USER_GID}" -eq 0 ]; then
-    echo "ERROR: To run as root, either set env RUN_AS_ROOT=yes or use ./docker-wine --as-root"
+    echo "ERROR: To run as root, either set env RUN_AS_ROOT=yes --as-root"
     exit 1
 fi
 
@@ -58,87 +56,34 @@ if [ "${OWNER_IDS}" != "${USER_UID}:${USER_GID}" ]; then
     fi
 fi
 
-# Configure timezone
-ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime
-echo "${TZ}" > /etc/timezone
-
-# Run in X11 redirection mode (default) or with xvfb
-if is_disabled "${RDP_SERVER}"; then
-
-    # Set up pulseaudio for redirection to UNIX socket
-    if is_disabled "${DUMMY_PULSEAUDIO}" && [ -e /tmp/pulse-socket ]; then
-        [ ! -f /root/pulse/client.conf ] || cp /root/pulse/client.conf /etc/pulse/client.conf
-    fi
-
-    # Run xvfb
-    if is_enabled "${USE_XVFB}"; then
-        nohup /usr/bin/Xvfb "${XVFB_SERVER}" -screen "${XVFB_SCREEN}" "${XVFB_RESOLUTION}" >/dev/null 2>&1 &
-    fi
-
-    # Generate .Xauthority using xauth with .Xkey sourced from host
-    if [ -f /root/.Xkey ]; then
-        [ -f /root/.Xauthority ] || touch /root/.Xauthority
-        xauth add "$DISPLAY" . "$(cat /root/.Xkey)"
-    fi
-
-    # Run in X11 redirection mode as $USER_NAME (default)
-    if is_disabled "${RUN_AS_ROOT}"; then
-
-        # Copy and take ownership of .Xauthority for X11 redirection
-        if [ -f /root/.Xauthority ] && is_disabled "${USE_XVFB}"; then
-            cp /root/.Xauthority "${USER_HOME}"
-            chown "${USER_UID}":"${USER_GID}" "${USER_HOME}/.Xauthority"
-        fi
-
-        # Run in X11 redirection mode as user
-        exec gosu "${USER_NAME}" "$@"
-
-    # Run in X11 redirection mode as root
-    elif is_enabled "${RUN_AS_ROOT}"; then
-        exec "$@"
-    else
-        echo "ERROR: '${RUN_AS_ROOT}' is not a valid value for RUN_AS_ROOT"
-        exit 1
-    fi
-
-# Run in RDP server mode
-elif is_enabled "${RDP_SERVER}"; then
-
-    # Exit if using nordp image
-    if ! [ -f /usr/sbin/xrdp ]; then
-        echo "ERROR: Unable to start RDP server as it is not included in this version of the docker-wine image"
-        exit 1
-    fi
-
-    # Remove xrdp pulseaudio source and sink modules if using dummy sound option
-    if is_enabled "${DUMMY_PULSEAUDIO}"; then
-        rm -f /var/lib/xrdp-pulseaudio-installer/module-xrdp-{sink,source}.so
-    fi
-
-    # If the pid for sesman or xrdp is there they need to be removed
-    # or else sesman/xrdp won't start and connections will fail
-    [ ! -f /var/run/xrdp/xrdp-sesman.pid ] || rm -f /var/run/xrdp/xrdp-sesman.pid
-    [ ! -f /var/run/xrdp/xrdp.pid ] || rm -f /var/run/xrdp/xrdp.pid
-
-    # Start xrdp sesman service
-    /usr/sbin/xrdp-sesman
-
-    # Run xrdp in foreground if no commands specified
-    if [ -z "$1" ]; then
-        exec /usr/sbin/xrdp --nodaemon
-    else
-        /usr/sbin/xrdp
-
-        if is_disabled "${RUN_AS_ROOT}"; then
-            exec gosu "${USER_NAME}" "$@"
-        elif is_enabled "${RUN_AS_ROOT}"; then
-            exec "$@"
-        else
-            echo "ERROR: '${RUN_AS_ROOT}' is not a valid value for RUN_AS_ROOT"
-            exit 1
-        fi
-    fi
-else
-    echo "ERROR: '${RDP_SERVER}' is not a valid value for RDP_SERVER"
-    exit 1
+# Run xvfb
+if is_enabled "${USE_XVFB}"; then
+	nohup /usr/bin/Xvfb "${XVFB_SERVER}" -screen "${XVFB_SCREEN}" "${XVFB_RESOLUTION}" >/dev/null 2>&1 &
 fi
+
+# Generate .Xauthority using xauth with .Xkey sourced from host
+if [ -f /root/.Xkey ]; then
+	[ -f /root/.Xauthority ] || touch /root/.Xauthority
+	xauth add "$DISPLAY" . "$(cat /root/.Xkey)"
+fi
+
+# Run in X11 redirection mode as $USER_NAME (default)
+if is_disabled "${RUN_AS_ROOT}"; then
+
+	# Copy and take ownership of .Xauthority for X11 redirection
+	if [ -f /root/.Xauthority ] && is_disabled "${USE_XVFB}"; then
+		cp /root/.Xauthority "${USER_HOME}"
+		chown "${USER_UID}":"${USER_GID}" "${USER_HOME}/.Xauthority"
+	fi
+
+	# Run in X11 redirection mode as user
+	exec gosu "${USER_NAME}" "$@"
+
+# Run in X11 redirection mode as root
+elif is_enabled "${RUN_AS_ROOT}"; then
+	exec "$@"
+else
+	echo "ERROR: '${RUN_AS_ROOT}' is not a valid value for RUN_AS_ROOT"
+	exit 1
+fi
+
